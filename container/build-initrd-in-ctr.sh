@@ -55,13 +55,15 @@ rootfs_alpine() {
 	ln -sf /etc/init.d/procfs ./etc/runlevels/boot/procfs
 	ln -sf /etc/init.d/sysfs  ./etc/runlevels/boot/sysfs
 
+	ln -sf networking             ./etc/init.d/net.eth0
 	ln -sf /etc/init.d/networking ./etc/runlevels/default/networking
+	ln -sf /etc/init.d/net.eth0   ./etc/runlevels/default/net.eth0
 
+	ln -sf agetty                   ./etc/init.d/agetty.ttyS0
 	ln -sf /etc/init.d/agetty.ttyS0 ./etc/runlevels/default/agetty.ttyS0
-	ln -sf agetty       ./etc/init.d/agetty.ttyS0
 
+	ln -sf sshd                  ./etc/init.d/sshd.eth0
 	ln -sf /etc/init.d/sshd.eth0 ./etc/runlevels/default/sshd.eth0
-	ln -sf sshd      ./etc/init.d/sshd.eth0
 
 	echo "ttyS0" >> ./etc/securetty
 
@@ -70,10 +72,7 @@ auto lo
 iface lo inet loopback
 
 auto eth0
-iface eth0 inet static
-#        address 172.16.0.2
-#        netmask 255.255.255.0
-#        gateway 172.16.0.1
+iface eth0 inet manual
 EOF
 
 	cp /guest/$(basename ${fcnetPath}) ./${fcnetPath}
@@ -100,9 +99,20 @@ EOF
 setup_ssh_key() {
 	rm -rf ssh-key
 	mkdir -p ssh-key
+
+	# Generate key for ssh access from host
 	ssh-keygen -f ssh-key/id_rsa -N ""
 	mkdir -m 0600 -p ${rootfsDir}/root/.ssh/
 	cp ssh-key/id_rsa.pub ${rootfsDir}/root/.ssh/authorized_keys
+
+	# Generate SSH keys for guest
+	ssh-keygen -A -f ${rootfsDir} -N ""
+
+	#Start ssh only when eth0 is set up
+	cat >> ${rootfsDir}/etc/conf.d/sshd << EOF
+sshd_disable_keygen="yes"
+rc_need="net.eth0 fcnet"
+EOF
 }
 
 setup_ssh_insecure() {
