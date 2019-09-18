@@ -51,6 +51,8 @@ rootfs_alpine() {
 			grep
 
 	cd ${rootfsDir}
+
+	# Configure startup
 	ln -sf /etc/init.d/devfs  ./etc/runlevels/boot/devfs
 	ln -sf /etc/init.d/procfs ./etc/runlevels/boot/procfs
 	ln -sf /etc/init.d/sysfs  ./etc/runlevels/boot/sysfs
@@ -67,6 +69,7 @@ rootfs_alpine() {
 
 	echo "ttyS0" >> ./etc/securetty
 
+	# Configure networking
 	cat >> ./etc/network/interfaces << EOF
 auto lo
 iface lo inet loopback
@@ -75,24 +78,26 @@ auto eth0
 iface eth0 inet manual
 EOF
 
+	## fcnet configures eth0 IP address based on the MAC address provided
 	cp /guest/$(basename ${fcnetPath}) ./${fcnetPath}
 	chown root ./${fcnetPath}
 	chmod 755 ./${fcnetPath}
-
 	cat >> ./etc/init.d/fcnet << EOF
 #!/sbin/openrc-run
 
 command="${fcnetPath}"
 EOF
 	ln -sf /etc/init.d/fcnet ./etc/runlevels/default/fcnet
-
 	chmod 755 ./etc/init.d/fcnet
 
+	# Use a custom for boot done signaling to Firecracker
 	local openrcInit="/sbin/openrc-init"
-
 	mv ./sbin/init .${openrcInit}
-
 	gcc -DOPENRC_INIT="\"${openrcInit}"\" -static -o ./sbin/init /guest/boot_done.c
+
+	# Add apk repositories
+	cp /etc/apk/repositories ./etc/apk/repositories
+
 	cd - >/dev/null
 }
 
