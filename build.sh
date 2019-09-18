@@ -8,7 +8,6 @@ set -euo pipefail
 
 buildDir=`pwd`/build
 rootfsDir=${buildDir}/rootfs
-fcnetPath="/usr/local/bin/fcnet-setup.sh"
 builder="/build-initrd-in-ctr.sh"
 
 if command -v podman >/dev/null; then
@@ -27,7 +26,7 @@ $ctrEngine run \
 	-v${buildDir}:/build \
 	-v`pwd`/container:/container:ro \
 	-v`pwd`/container/${builder}:${builder}:ro \
-	-v`pwd`/guest/fcnet-setup.sh:${fcnetPath}:ro \
+	-v`pwd`/guest:/guest:ro \
 	alpine:latest \
 	${builder} $@
 

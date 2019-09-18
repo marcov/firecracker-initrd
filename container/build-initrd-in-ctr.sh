@@ -28,7 +28,7 @@ is_a_container() {
 rootfs_suse() {
 	[ -f "config.xml" ] || { echo "ERROR: need a config.xml!"; exit 127; }
 	# populate rootfs
-	kiwi system prepare --description=`pwd`/container --allow-existing-root --root "$rootfsDir"
+	kiwi system prepare --description=/container --allow-existing-root --root "$rootfsDir"
 
 	rm -f ${rootfsDir}/etc/systemd/system/getty.target.wants/getty@tty1.service
 	ln -sf /usr/lib/systemd/system/getty@.service ${rootfsDir}/etc/systemd/system/getty.target.wants/getty@ttyS0.service
@@ -76,7 +76,7 @@ iface eth0 inet static
 #        gateway 172.16.0.1
 EOF
 
-	cp ${fcnetPath} ./${fcnetPath}
+	cp /guest/$(basename ${fcnetPath}) ./${fcnetPath}
 	chown root ./${fcnetPath}
 	chmod 755 ./${fcnetPath}
 
@@ -93,24 +93,7 @@ EOF
 
 	mv ./sbin/init .${openrcInit}
 
-	cat << EOF | gcc -x c - -static -o ./sbin/init
-#include <sys/io.h>
-#include <unistd.h>
-
-static __inline void
-outb_p (unsigned char __value, unsigned short int __port)
-{
-  __asm__ __volatile__ ("outb %b0,%w1\noutb %%al,\$0x80": :"a" (__value),
-			"Nd" (__port));
-}
-
-int main(int argc, char *const argv[]) {
-    iopl(3);
-    outb_p(123, 0x03f0);
-    return execv("${openrcInit}", argv);
-}
-EOF
-
+	gcc -DOPENRC_INIT="\"${openrcInit}"\" -static -o ./sbin/init /guest/boot_done.c
 	cd - >/dev/null
 }
 
