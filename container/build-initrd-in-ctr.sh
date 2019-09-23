@@ -98,6 +98,8 @@ EOF
 	# Add apk repositories
 	cp /etc/apk/repositories ./etc/apk/repositories
 
+	chroot $rootfsDir /bin/sh -c 'echo -e "root\nroot" | passwd root'
+
 	cd - >/dev/null
 }
 
