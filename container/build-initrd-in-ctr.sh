@@ -93,7 +93,7 @@ EOF
 	# Use a custom for boot done signaling to Firecracker
 	local openrcInit="/sbin/openrc-init"
 	mv ./sbin/init .${openrcInit}
-	gcc -DOPENRC_INIT="\"${openrcInit}"\" -static -o ./sbin/init /guest/boot_done.c
+	gcc -DOPENRC_INIT="\"${openrcInit}"\" -static -O3 -o ./sbin/init /guest/boot_done.c
 
 	# Add apk repositories
 	cp /etc/apk/repositories ./etc/apk/repositories

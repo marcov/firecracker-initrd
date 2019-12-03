@@ -3,6 +3,8 @@
 #define MAGIC_VALUE_SIGNAL_GUEST_BOOT_COMPLETE 123
 
 #if defined(__aarch64__)
+#include <stdio.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -10,9 +12,27 @@
 
 #define MAGIC_IOPORT_SIGNAL_GUEST_BOOT_COMPLETE 0x40000000
 
+#define MEM_CHARDEV "/tmp/mem"
+
 static __inline void boot_done(void)
 {
-    int fd = open("/dev/mem", O_RDWR);
+    if (mknod(MEM_CHARDEV,
+              S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP,
+              makedev(1, 1)) < 0) {
+        perror("Failed to mknod " MEM_CHARDEV);
+        return;
+    }
+
+
+    // The standard /dev/mem character device is not yet available, as the /dev
+    // mount point is created by the init.
+    // Hence we need to create a dedicated mem chardev
+    int fd = open(MEM_CHARDEV, O_RDWR);
+    if (fd < 0) {
+        perror("Failed to open " MEM_CHARDEV);
+        return;
+    }
+
     int size = getpagesize();
 
     void* mem = mmap(NULL,
@@ -24,12 +44,15 @@ static __inline void boot_done(void)
     close(fd);
 
     if (mem == MAP_FAILED) {
+        perror("mmap failed with MAP_FAILED");
         return;
     }
 
     *(volatile char *)(mem) = MAGIC_VALUE_SIGNAL_GUEST_BOOT_COMPLETE;
 
     munmap(mem, size);
+    close(fd);
+    unlink(MEM_CHARDEV);
 }
 #endif /* __aarch64__ */
 
