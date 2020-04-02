@@ -10,8 +10,10 @@ buildDir=/build
 rootfsDir=${buildDir}/rootfs
 keepRoot=
 flavor=
+compress=
+addNetwork=1
 fcnetPath="/usr/local/bin/fcnet-setup.sh"
-initrdFile="initrd.gz"
+initrdFile="initrd.img"
 
 is_a_container() {
 	if [ -f /run/.containerenv ]; then
@@ -39,16 +41,21 @@ setup_alpine() {
 }
 
 rootfs_alpine() {
+	pkgs="alpine-base"
+
 	mkdir "${rootfsDir}"
-	apk -X http://dl-5.alpinelinux.org/alpine/latest-stable/main -U --allow-untrusted --root ${rootfsDir} --initdb \
-		add \
-			alpine-base \
+
+	[ -n "$addNetwork" ] && pkgs=" \
+			$pkgs    \
 			iptables \
 			iproute2 \
 			openssh \
 			util-linux \
 			openrc \
-			grep
+			grep"
+
+	apk -X "http://dl-5.alpinelinux.org/alpine/latest-stable/main" -U --allow-untrusted --root ${rootfsDir} --initdb \
+		add $pkgs
 
 	cd ${rootfsDir}
 
@@ -57,20 +64,20 @@ rootfs_alpine() {
 	ln -sf /etc/init.d/procfs ./etc/runlevels/boot/procfs
 	ln -sf /etc/init.d/sysfs  ./etc/runlevels/boot/sysfs
 
-	ln -sf networking             ./etc/init.d/net.eth0
-	ln -sf /etc/init.d/networking ./etc/runlevels/default/networking
-	ln -sf /etc/init.d/net.eth0   ./etc/runlevels/default/net.eth0
-
 	ln -sf agetty                   ./etc/init.d/agetty.ttyS0
+	echo "ttyS0" >> ./etc/securetty
 	ln -sf /etc/init.d/agetty.ttyS0 ./etc/runlevels/default/agetty.ttyS0
 
-	ln -sf sshd                  ./etc/init.d/sshd.eth0
-	ln -sf /etc/init.d/sshd.eth0 ./etc/runlevels/default/sshd.eth0
+	if [ -n "$addNetwork" ]; then
+		ln -sf networking             ./etc/init.d/net.eth0
+		ln -sf /etc/init.d/networking ./etc/runlevels/default/networking
+		ln -sf /etc/init.d/net.eth0   ./etc/runlevels/default/net.eth0
 
-	echo "ttyS0" >> ./etc/securetty
+		ln -sf sshd                  ./etc/init.d/sshd.eth0
+		ln -sf /etc/init.d/sshd.eth0 ./etc/runlevels/default/sshd.eth0
 
-	# Configure networking
-	cat >> ./etc/network/interfaces << EOF
+		# Configure networking
+		cat >> ./etc/network/interfaces << EOF
 auto lo
 iface lo inet loopback
 
@@ -78,27 +85,30 @@ auto eth0
 iface eth0 inet manual
 EOF
 
-	## fcnet configures eth0 IP address based on the MAC address provided
-	cp /guest/$(basename ${fcnetPath}) ./${fcnetPath}
-	chown root ./${fcnetPath}
-	chmod 755 ./${fcnetPath}
-	cat >> ./etc/init.d/fcnet << EOF
+		## fcnet configures eth0 IP address based on the MAC address provided
+		cp /guest/$(basename ${fcnetPath}) ./${fcnetPath}
+		chown root ./${fcnetPath}
+		chmod 755 ./${fcnetPath}
+		cat >> ./etc/init.d/fcnet << EOF
 #!/sbin/openrc-run
 
 command="${fcnetPath}"
 EOF
-	ln -sf /etc/init.d/fcnet ./etc/runlevels/default/fcnet
-	chmod 755 ./etc/init.d/fcnet
 
-	# Use a custom for boot done signaling to Firecracker
-	local openrcInit="/sbin/openrc-init"
-	mv ./sbin/init .${openrcInit}
-	gcc -DOPENRC_INIT="\"${openrcInit}"\" -static -O3 -o ./sbin/init /guest/boot_done.c
+		ln -sf /etc/init.d/fcnet ./etc/runlevels/default/fcnet
+		chmod 755 ./etc/init.d/fcnet
 
-	# Add apk repositories
-	cp /etc/apk/repositories ./etc/apk/repositories
+		# Use a custom for boot done signaling to Firecracker
+		local openrcInit="/sbin/openrc-init"
+		mv ./sbin/init .${openrcInit}
+		gcc -DOPENRC_INIT="\"${openrcInit}"\" -static -O3 -o ./sbin/init /guest/boot_done.c
 
-	chroot $rootfsDir /bin/sh -c 'echo -e "root\nroot" | passwd root'
+		# Add apk repositories
+		cp /etc/apk/repositories ./etc/apk/repositories
+
+		chroot $rootfsDir /bin/sh -c 'echo -e "root\nroot" | passwd root'
+
+	fi # [ -n "$addNetwork" ]
 
 	cd - >/dev/null
 }
@@ -136,23 +146,36 @@ PubkeyAuthentication yes
 }
 
 parse_args() {
-	[ -n "${1:-}" ] && case ${1:-} in
-		-k)
-			keepRoot=1
-			shift
-			;;
 
-		-h)
-			usage
-			exit 0
-			;;
+	while [ "$#" -ge 1 ]; do
+		case ${1:-} in
+			-k)
+				keepRoot=1
+				shift
+				;;
 
-		-*)
-			echo "ERROR: unrecognized option \"$1\""
-			usage
-			exit 127
-			;;
-	esac
+			-z)
+				compress=1
+				shift
+				;;
+
+			-h|--help)
+				usage
+				exit 0
+				;;
+
+			--minimal)
+				addNetwork=
+				shift
+				;;
+
+			-*)
+				echo "ERROR: unrecognized option \"$1\""
+				usage
+				exit 127
+				;;
+		esac
+	done
 
 	flavor="${1:-}"
 	if [ -z "${flavor:-}" ]; then
@@ -166,14 +189,14 @@ USAGE:
 
 	$(basename "$0") [options] [DISTRO-FLAVOR]
 
-Create a initrd based on the specified distro flavor: alpine or suse.
-If not specified, the alpine distro is used.
+Creates an Alpine based initrd.
 
 Options:
 
     -h             Show this help
-
-    -k             Only Compress a previously created rootfs into an initrd image
+    -k             Create an inirtd image from an existing rootfs at .${rootfsDir}
+    -z             Compress the initrd using gzip
+    --minimal      Create a minimal image without networking
 
 EOF
 }
@@ -226,15 +249,24 @@ main() {
 
 		# set boot and account
 		ln -sf /sbin/init ${rootfsDir}/init
-		setup_ssh_key
-		setup_ssh_insecure
+		if [ -n "$addNetwork" ]; then
+			setup_ssh_key
+			setup_ssh_insecure
+		fi
 	fi
 
 
 
-	echo "INFO: compresing initrd"
-	# create gz'ed cpio
-	{ cd $rootfsDir; find . -print0 | cpio --null --create --verbose --format=newc | gzip --best > ${buildDir}/${initrdFile}; cd - >/dev/null; }
+	echo "INFO: Creating initrd"
+	# create (gz'ed) cpio
+
+	if [ -n "$compress" ]; then
+		compressor="gzip --best"
+	else
+		compressor="tee"
+	fi
+
+	{ cd $rootfsDir; find . -print0 | cpio --null --create --verbose --format=newc | ${compressor} > ${buildDir}/${initrdFile}; cd - >/dev/null; }
 
 	cd - >/dev/null
 
