@@ -41,18 +41,18 @@ setup_alpine() {
 }
 
 rootfs_alpine() {
-	pkgs="alpine-base"
+	pkgs="alpine-base \
+			openrc \
+			util-linux"
 
 	mkdir "${rootfsDir}"
 
 	[ -n "$addNetwork" ] && pkgs=" \
-			$pkgs    \
-			iptables \
-			iproute2 \
-			openssh \
-			util-linux \
-			openrc \
-			grep"
+							$pkgs    \
+							iptables \
+							iproute2 \
+							openssh \
+							grep"
 
 	apk -X "http://dl-5.alpinelinux.org/alpine/latest-stable/main" -U --allow-untrusted --root ${rootfsDir} --initdb \
 		add $pkgs
